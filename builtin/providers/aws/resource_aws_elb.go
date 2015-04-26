@@ -128,6 +128,11 @@ func resourceAwsElb() *schema.Resource {
 							Type:     schema.TypeString,
 							Optional: true,
 						},
+
+						"proxy_protocol": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+						},
 					},
 				},
 				Set: resourceAwsElbListenerHash,
@@ -182,7 +187,8 @@ func resourceAwsElbCreate(d *schema.ResourceData, meta interface{}) error {
 	elbconn := meta.(*AWSClient).elbconn
 
 	// Expand the "listener" set to aws-sdk-go compat []*elb.Listener
-	listeners, err := expandListeners(d.Get("listener").(*schema.Set).List())
+	elbListeners := d.Get("listener").(*schema.Set).List()
+	listeners, err := expandListeners(elbListeners)
 	if err != nil {
 		return err
 	}
@@ -230,6 +236,49 @@ func resourceAwsElbCreate(d *schema.ResourceData, meta interface{}) error {
 	d.SetPartial("subnets")
 
 	d.Set("tags", tagsToMapELB(tags))
+
+	policies := expandELBPolicies(elbOpts.LoadBalancerName, elbListeners)
+	// One ProxyProtocolPolicyType is enough for one LB
+	var proxyProtoPolicyName *string
+	for ip, policies := range policies {
+		policyNames := []*string{}
+
+		for _, policyOpt := range policies {
+			// skip if ProxyProtocolPolicyType is already created
+			if *policyOpt.PolicyName == "ProxyProtocolPolicyType" &&
+				proxyProtoPolicyName != nil {
+				policyNames = append(policyNames, policyOpt.PolicyName)
+				continue
+			}
+
+			// Create a policy
+			log.Printf("[DEBUG] ELB create a policy %s from policy type %s",
+				policyOpt.PolicyName, policyOpt.PolicyTypeName)
+
+			if _, err := elbconn.CreateLoadBalancerPolicy(policyOpt); err != nil {
+				return fmt.Errorf("Error creating a policy %s: %s",
+					policyOpt.PolicyName, err)
+			}
+
+			if *policyOpt.PolicyTypeName == "ProxyProtocolPolicyType" {
+				// this policy will be reused for another instance port if needed
+				proxyProtoPolicyName = policyOpt.PolicyName
+			}
+
+			policyNames = append(policyNames, policyOpt.PolicyName)
+		}
+
+		bOpt := &elb.SetLoadBalancerPoliciesForBackendServerInput{
+			InstancePort:     &ip,
+			LoadBalancerName: elbOpts.LoadBalancerName,
+			PolicyNames:      policyNames,
+		}
+		if _, err := elbconn.SetLoadBalancerPoliciesForBackendServer(bOpt); err != nil {
+			return fmt.Errorf("Error setting policies for backend: %s", err)
+		}
+	}
+
+	d.SetPartial("listener")
 
 	return resourceAwsElbUpdate(d, meta)
 }

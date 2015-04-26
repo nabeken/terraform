@@ -41,6 +41,32 @@ func expandListeners(configured []interface{}) ([]*elb.Listener, error) {
 	return listeners, nil
 }
 
+func expandELBPolicies(
+	lbName *string, configured []interface{}) map[int64][]*elb.CreateLoadBalancerPolicyInput {
+
+	policies := make(map[int64][]*elb.CreateLoadBalancerPolicyInput)
+
+	for _, lRaw := range configured {
+		data := lRaw.(map[string]interface{})
+		ip := int64(data["instance_port"].(int))
+
+		if proxyProtocol := data["proxy_protocol"].(bool); proxyProtocol {
+			policies[ip] = append(policies[ip], &elb.CreateLoadBalancerPolicyInput{
+				LoadBalancerName: lbName,
+				PolicyAttributes: []*elb.PolicyAttribute{
+					&elb.PolicyAttribute{
+						AttributeName:  aws.String("ProxyProtocol"),
+						AttributeValue: aws.String("True"),
+					},
+				},
+				PolicyName:     aws.String("TFEnableProxyProtocol"),
+				PolicyTypeName: aws.String("ProxyProtocolPolicyType"),
+			})
+		}
+	}
+	return policies
+}
+
 // Takes the result of flatmap.Expand for an array of ingress/egress
 // security group rules and returns EC2 API compatible objects
 func expandIPPerms(
