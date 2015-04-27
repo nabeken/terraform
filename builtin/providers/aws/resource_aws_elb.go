@@ -132,6 +132,7 @@ func resourceAwsElb() *schema.Resource {
 						"proxy_protocol": &schema.Schema{
 							Type:     schema.TypeBool,
 							Optional: true,
+							Default:  false,
 						},
 					},
 				},
@@ -239,33 +240,30 @@ func resourceAwsElbCreate(d *schema.ResourceData, meta interface{}) error {
 
 	policies := expandELBPolicies(elbOpts.LoadBalancerName, elbListeners)
 	// One ProxyProtocolPolicyType is enough for one LB
-	var proxyProtoPolicyName *string
+	reuseProxyProtocolPolicy := false
 	for ip, policies := range policies {
 		policyNames := []*string{}
 
-		for _, policyOpt := range policies {
-			// skip if ProxyProtocolPolicyType is already created
-			if *policyOpt.PolicyName == "ProxyProtocolPolicyType" &&
-				proxyProtoPolicyName != nil {
-				policyNames = append(policyNames, policyOpt.PolicyName)
+		for _, pOpt := range policies {
+			policyNames = append(policyNames, pOpt.PolicyName)
+
+			if *pOpt.PolicyName == "ProxyProtocolPolicyType" && reuseProxyProtocolPolicy {
+				// Let's reuse the policy
 				continue
 			}
 
 			// Create a policy
 			log.Printf("[DEBUG] ELB create a policy %s from policy type %s",
-				policyOpt.PolicyName, policyOpt.PolicyTypeName)
+				*pOpt.PolicyName, *pOpt.PolicyTypeName)
 
-			if _, err := elbconn.CreateLoadBalancerPolicy(policyOpt); err != nil {
-				return fmt.Errorf("Error creating a policy %s: %s",
-					policyOpt.PolicyName, err)
+			if _, err := elbconn.CreateLoadBalancerPolicy(pOpt); err != nil {
+				return fmt.Errorf("Error creating a policy %s: %s", *pOpt.PolicyName, err)
 			}
 
-			if *policyOpt.PolicyTypeName == "ProxyProtocolPolicyType" {
-				// this policy will be reused for another instance port if needed
-				proxyProtoPolicyName = policyOpt.PolicyName
+			if *pOpt.PolicyName == "ProxyProtocolPolicyType" {
+				// Let load balancer reuse the policy after this
+				reuseProxyProtocolPolicy = true
 			}
-
-			policyNames = append(policyNames, policyOpt.PolicyName)
 		}
 
 		bOpt := &elb.SetLoadBalancerPoliciesForBackendServerInput{
@@ -329,7 +327,7 @@ func resourceAwsElbRead(d *schema.ResourceData, meta interface{}) error {
 	d.Set("internal", *lb.Scheme == "internal")
 	d.Set("availability_zones", lb.AvailabilityZones)
 	d.Set("instances", flattenInstances(lb.Instances))
-	d.Set("listener", flattenListeners(lb.ListenerDescriptions))
+	d.Set("listener", flattenListeners(lb.ListenerDescriptions, lb.BackendServerDescriptions))
 	d.Set("security_groups", lb.SecurityGroups)
 	d.Set("subnets", lb.Subnets)
 	d.Set("idle_timeout", lbAttrs.ConnectionSettings.IdleTimeout)
@@ -393,6 +391,68 @@ func resourceAwsElbUpdate(d *schema.ResourceData, meta interface{}) error {
 			_, err := elbconn.CreateLoadBalancerListeners(createListenersOpts)
 			if err != nil {
 				return fmt.Errorf("Failure adding new or updated listeners: %s", err)
+			}
+		}
+
+		policies := expandELBPolicies(aws.String(d.Id()), d.Get("listener").(*schema.Set).List())
+
+		// One ProxyProtocolPolicyType per one LB is enough
+		reuseProxyProtocolPolicy := false
+		proxyProtocolInUse := false
+		for _, l := range os.List() {
+			data := l.(map[string]interface{})
+			if proxyProtocol := data["proxy_protocol"].(bool); proxyProtocol {
+				reuseProxyProtocolPolicy = true
+				break
+			}
+		}
+
+		for ip, policies := range policies {
+			policyNames := []*string{}
+
+			for _, pOpt := range policies {
+				// skip if ProxyProtocolPolicyType is already created
+				if *pOpt.PolicyName == "ProxyProtocolPolicyType" && reuseProxyProtocolPolicy {
+					policyNames = append(policyNames, aws.String("TFEnableProxyProtocol"))
+					proxyProtocolInUse = true
+					continue
+				}
+
+				// Create a policy
+				log.Printf("[DEBUG] ELB create a policy %s from policy type %s",
+					*pOpt.PolicyName, *pOpt.PolicyTypeName)
+
+				if _, err := elbconn.CreateLoadBalancerPolicy(pOpt); err != nil {
+					return fmt.Errorf("Error creating a policy %s: %s",
+						*pOpt.PolicyName, err)
+				}
+
+				if *pOpt.PolicyTypeName == "ProxyProtocolPolicyType" {
+					reuseProxyProtocolPolicy = true
+					proxyProtocolInUse = true
+				}
+
+				policyNames = append(policyNames, pOpt.PolicyName)
+			}
+
+			bOpt := &elb.SetLoadBalancerPoliciesForBackendServerInput{
+				InstancePort:     &ip,
+				LoadBalancerName: aws.String(d.Id()),
+				PolicyNames:      policyNames,
+			}
+			if _, err := elbconn.SetLoadBalancerPoliciesForBackendServer(bOpt); err != nil {
+				return fmt.Errorf("Error setting policies for backend: %s", err)
+			}
+		}
+
+		// Remove ProxyProtocolPolicyType when no instance port attaches the policy
+		if !proxyProtocolInUse {
+			pOpt := &elb.DeleteLoadBalancerPolicyInput{
+				LoadBalancerName: aws.String(d.Id()),
+				PolicyName:       aws.String("TFEnableProxyProtocol"),
+			}
+			if _, err := elbconn.DeleteLoadBalancerPolicy(pOpt); err != nil {
+				return fmt.Errorf("Error removing policies from load balancer: %s", err)
 			}
 		}
 
@@ -533,6 +593,9 @@ func resourceAwsElbListenerHash(v interface{}) int {
 
 	if v, ok := m["ssl_certificate_id"]; ok {
 		buf.WriteString(fmt.Sprintf("%s-", v.(string)))
+	}
+	if v, ok := m["proxy_protocol"]; ok {
+		buf.WriteString(fmt.Sprintf("%t-", v.(bool)))
 	}
 
 	return hashcode.String(buf.String())

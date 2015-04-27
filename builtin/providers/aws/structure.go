@@ -50,6 +50,9 @@ func expandELBPolicies(
 		data := lRaw.(map[string]interface{})
 		ip := int64(data["instance_port"].(int))
 
+		// populate a key
+		policies[ip] = []*elb.CreateLoadBalancerPolicyInput{}
+
 		if proxyProtocol := data["proxy_protocol"].(bool); proxyProtocol {
 			policies[ip] = append(policies[ip], &elb.CreateLoadBalancerPolicyInput{
 				LoadBalancerName: lbName,
@@ -196,10 +199,17 @@ func expandInstanceString(list []interface{}) []*elb.Instance {
 	return result
 }
 
-// Flattens an array of Listeners into a []map[string]interface{}
-func flattenListeners(list []*elb.ListenerDescription) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(list))
-	for _, i := range list {
+// Flattens an array of Listeners and Backends into a []map[string]interface{}
+func flattenListeners(llist []*elb.ListenerDescription, blist []*elb.BackendServerDescription) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(blist))
+	backendPolicies := make(map[int64][]string)
+	for _, i := range blist {
+		for _, p := range i.PolicyNames {
+			backendPolicies[*i.InstancePort] = append(backendPolicies[*i.InstancePort], *p)
+		}
+	}
+
+	for _, i := range llist {
 		l := map[string]interface{}{
 			"instance_port":     *i.Listener.InstancePort,
 			"instance_protocol": strings.ToLower(*i.Listener.InstanceProtocol),
@@ -209,6 +219,14 @@ func flattenListeners(list []*elb.ListenerDescription) []map[string]interface{} 
 		// SSLCertificateID is optional, and may be nil
 		if i.Listener.SSLCertificateID != nil {
 			l["ssl_certificate_id"] = *i.Listener.SSLCertificateID
+		}
+		if policies, found := backendPolicies[*i.Listener.InstancePort]; found {
+			for _, p := range policies {
+				// ProxyProtocol is optional, and default is false
+				if p == "TFEnableProxyProtocol" {
+					l["proxy_protocol"] = true
+				}
+			}
 		}
 		result = append(result, l)
 	}
