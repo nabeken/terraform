@@ -1,105 +1,48 @@
 package aws
 
 import (
-	"bytes"
 	"fmt"
 	"testing"
-	"text/template"
 
 	"github.com/awslabs/aws-sdk-go/aws"
-	"github.com/awslabs/aws-sdk-go/service/iam"
 	"github.com/awslabs/aws-sdk-go/service/opsworks"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
 )
 
 func TestAccAWSOpsWorksStack_NoVPC(t *testing.T) {
-	var opsworksIAM testAccAWSOpsWorksIAM
-	novpcConfig := &bytes.Buffer{}
-	novpcConfigUpdate := &bytes.Buffer{}
-
-	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckAWSOpsWorksStackDestroy,
-		Steps: []resource.TestStep{
-			// Ensure that necessary IAM roles are available
-			resource.TestStep{
-				Config: testAccOpsWorksConfig_pre, // noop
-				Check: testAccCheckAWSOpsWorksEnsureIAM(t, &opsworksIAM, func() error {
-					err := testAccAWSOpsWorksStack_NoVPCConfig.Execute(
-						novpcConfig,
-						&opsworksIAM,
-					)
-					err = testAccAWSOpsWorksStack_NoVPCConfigUpdate.Execute(
-						novpcConfigUpdate,
-						&opsworksIAM,
-					)
-					return err
-				}),
-			},
-		},
-	})
-
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckAWSOpsWorksStackDestroy,
 		Steps: []resource.TestStep{
 			resource.TestStep{
-				Config: novpcConfig.String(),
-				Check:  testAccAWSOpsWorksStackCheckResourceAttrs(&opsworksIAM),
+				Config: testAccAWSOpsWorksStack_NoVPCConfig,
+				Check:  testAccAWSOpsWorksStackCheckResourceAttrs,
 			},
 			resource.TestStep{
-				Config: novpcConfigUpdate.String(),
-				Check:  testAccAWSOpsWorksStackCheckResourceAttrsUpdate(&opsworksIAM),
+				Config: testAccAWSOpsWorksStack_VPCConfigUpdate,
+				Check:  testAccAWSOpsWorksStackCheckResourceAttrsUpdate,
 			},
 		},
 	})
 }
 
 func TestAccAWSOpsWorksStack_VPC(t *testing.T) {
-	var opsworksIAM testAccAWSOpsWorksIAM
-	vpcConfig := &bytes.Buffer{}
-	vpcConfigUpdate := &bytes.Buffer{}
-
-	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckAWSOpsWorksStackDestroy,
-		Steps: []resource.TestStep{
-			// Ensure that necessary IAM roles are available
-			resource.TestStep{
-				Config: testAccOpsWorksConfig_pre, // noop
-				Check: testAccCheckAWSOpsWorksEnsureIAM(t, &opsworksIAM, func() error {
-					err := testAccAWSOpsWorksStack_VPCConfig.Execute(
-						vpcConfig,
-						&opsworksIAM,
-					)
-					err = testAccAWSOpsWorksStack_VPCConfigUpdate.Execute(
-						vpcConfigUpdate,
-						&opsworksIAM,
-					)
-					return err
-				}),
-			},
-		},
-	})
-
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckAWSOpsWorksStackDestroy,
 		Steps: []resource.TestStep{
 			resource.TestStep{
-				Config: vpcConfig.String(),
-				Check:  testAccAWSOpsWorksStackCheckResourceAttrs(&opsworksIAM),
+				Config: testAccAWSOpsWorksStack_VPCConfig,
+				Check:  testAccAWSOpsWorksStackCheckResourceAttrs,
 			},
 
 			resource.TestStep{
-				Config: vpcConfigUpdate.String(),
+				Config: testAccAWSOpsWorksStack_VPCConfigUpdate,
 				Check: resource.ComposeTestCheckFunc(
-					testAccAWSOpsWorksStackCheckResourceAttrsUpdate(&opsworksIAM),
+					testAccAWSOpsWorksStackCheckResourceAttrsUpdate,
 					testAccCheckAWSOpsWorksVPC,
 				),
 			},
@@ -146,135 +89,105 @@ func testAccCheckAWSOpsWorksVPC(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckAWSOpsWorksEnsureIAM(t *testing.T, oiam *testAccAWSOpsWorksIAM, f func() error) func(*terraform.State) error {
-	return func(_ *terraform.State) error {
-		iamconn := testAccProvider.Meta().(*AWSClient).iamconn
+var testAccAWSOpsWorksStackCheckResourceAttrs = resource.ComposeTestCheckFunc(
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "name", "tf-opsworks-acc"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "default_availability_zone", "us-west-2a"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "default_os", "Amazon Linux 2014.09"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "default_root_device_type", "ebs"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "custom_json", `{"key": "value"}`),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "chef_version", "11.10"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "true"),
+)
 
-		serviceRoleOpts := &iam.GetRoleInput{
-			RoleName: aws.String("aws-opsworks-service-role"),
-		}
-		respServiceRole, err := iamconn.GetRole(serviceRoleOpts)
-		if err != nil {
-			return err
-		}
+var testAccAWSOpsWorksStackCheckResourceAttrsUpdate = resource.ComposeTestCheckFunc(
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "name", "tf-opsworks-acc"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "default_availability_zone", "us-west-2a"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "default_os", "Amazon Linux 2014.09"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "default_root_device_type", "ebs"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "custom_json", `{"key": "value"}`),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "chef_version", "11.10"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "true"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "use_custom_cookbooks", "true"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "manage_berkshelf", "true"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "cookbook_source.3517999628.type", "git"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "cookbook_source.3517999628.revision", "master"),
+	resource.TestCheckResourceAttr(
+		"aws_opsworks_stack.tf-acc", "cookbook_source.3517999628.url", "https://github.com/awslabs/opsworks-example-cookbooks.git"),
+)
 
-		instanceProfileOpts := &iam.GetInstanceProfileInput{
-			InstanceProfileName: aws.String("aws-opsworks-ec2-role"),
-		}
-		respInstanceProfile, err := iamconn.GetInstanceProfile(instanceProfileOpts)
-		if err != nil {
-			return err
-		}
-
-		*oiam = testAccAWSOpsWorksIAM{
-			ServiceRoleARN:     *respServiceRole.Role.ARN,
-			InstanceProfileARN: *respInstanceProfile.InstanceProfile.ARN,
-		}
-
-		t.Logf("[DEBUG] ServiceRoleARN for OpsWorks: %s", oiam.ServiceRoleARN)
-		t.Logf("[DEBUG] Instance Profile ARN for OpsWorks: %s", oiam.InstanceProfileARN)
-
-		return f()
-	}
+var testAccAWSOpsWorksStack_NoVPCConfig = `
+resource "aws_iam_role" "tf-acc-opsworks-ec2-role" {
+  name = "tf-acc-opsworks-ec2-role"
+  assume_role_policy = "{\"Version\":\"2008-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
 }
 
-var testAccAWSOpsWorksStackCheckResourceAttrs = func(oiam *testAccAWSOpsWorksIAM) resource.TestCheckFunc {
-	return resource.ComposeTestCheckFunc(
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "name", "tf-opsworks-acc"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "service_role_arn", oiam.ServiceRoleARN),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_instance_profile_arn", oiam.InstanceProfileARN),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_availability_zone", "us-west-2a"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_os", "Amazon Linux 2014.09"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_root_device_type", "ebs"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "custom_json", `{"key": "value"}`),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "chef_version", "11.10"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "true"),
-	)
+resource "aws_iam_instance_profile" "tf-acc-opsworks-ec2-profile" {
+  name = "tf-acc-opsworks-ec2-profile"
+  roles = ["${aws_iam_role.tf-acc-opsworks-ec2-role.name}"]
 }
 
-var testAccAWSOpsWorksStackCheckResourceAttrsUpdate = func(oiam *testAccAWSOpsWorksIAM) resource.TestCheckFunc {
-	return resource.ComposeTestCheckFunc(
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "name", "tf-opsworks-acc"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "service_role_arn", oiam.ServiceRoleARN),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_instance_profile_arn", oiam.InstanceProfileARN),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_availability_zone", "us-west-2a"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_os", "Amazon Linux 2014.09"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "default_root_device_type", "ebs"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "custom_json", `{"key": "value"}`),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "chef_version", "11.10"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "true"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "use_custom_cookbooks", "true"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "manage_berkshelf", "true"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "cookbook_source.3517999628.type", "git"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "cookbook_source.3517999628.revision", "master"),
-		resource.TestCheckResourceAttr(
-			"aws_opsworks_stack.tf-acc", "cookbook_source.3517999628.url", "https://github.com/awslabs/opsworks-example-cookbooks.git"),
-	)
+resource "aws_iam_role" "tf-acc-opsworks-service-role" {
+  name = "tf-acc-opsworks-service-role"
+  assume_role_policy = "{\"Version\":\"2008-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
 }
 
-// testAccAWSOpsWorksIAM is a IAM struct for acceptance test of OpsWorks
-type testAccAWSOpsWorksIAM struct {
-	ServiceRoleARN     string
-	InstanceProfileARN string
+resource "aws_iam_role_policy" "tf-acc-opsworks-service-policy" {
+  name = "tf-acc-opsworks-service-policy"
+  role = "${aws_iam_role.tf-acc-opsworks-service-role.name}"
+  policy = "{\"Statement\": [{\"Action\": [\"ec2:*\", \"iam:PassRole\",\"cloudwatch:GetMetricStatistics\",\"elasticloadbalancing:*\",\"rds:*\"],\"Effect\": \"Allow\",\"Resource\": [\"*\"] }]}"
 }
 
-const testAccOpsWorksConfig_pre = `
-resource "aws_security_group" "tf_test_foo" {
-	name = "tf_test_foo"
-	description = "foo"
-
-	ingress {
-		protocol = "icmp"
-		from_port = -1
-		to_port = -1
-		cidr_blocks = ["0.0.0.0/0"]
-	}
+resource "aws_opsworks_stack" "tf-acc" {
+  name = "tf-opsworks-acc"
+  service_role_arn = "${aws_iam_role.tf-acc-opsworks-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-ec2-profile.arn}"
+  default_availability_zone = "us-west-2a"
+  default_os = "Amazon Linux 2014.09"
+  default_root_device_type = "ebs"
+  custom_json = "{\"key\": \"value\"}"
+  chef_version = "11.10"
+  use_opsworks_security_groups = true
 }
 `
 
-var testAccAWSOpsWorksStack_NoVPCConfig = template.Must(
-	template.New("aws_opsworks_stack_novpc_config").Parse(`
-resource "aws_opsworks_stack" "tf-acc" {
-  name = "tf-opsworks-acc"
-  service_role_arn = "{{.ServiceRoleARN}}"
-  default_instance_profile_arn = "{{.InstanceProfileARN}}"
-  default_availability_zone = "us-west-2a"
-  default_os = "Amazon Linux 2014.09"
-  default_root_device_type = "ebs"
-  custom_json = "{\"key\": \"value\"}"
-  chef_version = "11.10"
-  use_opsworks_security_groups = true
+var testAccAWSOpsWorksStack_NoVPCConfigUpdate = `
+resource "aws_iam_role" "tf-acc-opsworks-ec2-role" {
+  name = "tf-acc-opsworks-ec2-role"
+  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
 }
-`))
 
-var testAccAWSOpsWorksStack_NoVPCConfigUpdate = template.Must(
-	template.New("aws_opsworks_stack_novpc_config_update").Parse(`
+resource "aws_iam_instance_profile" "tf-acc-opsworks-ec2-profile" {
+  name = "tf-acc-opsworks-ec2-profile"
+  roles = ["${aws_iam_role.tf-acc-opsworks-ec2-role.name}"]
+}
+
+resource "aws_iam_role" "tf-acc-opsworks-service-role" {
+  name = "tf-acc-opsworks-service-role"
+  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
+}
+
 resource "aws_opsworks_stack" "tf-acc" {
   name = "tf-opsworks-acc"
-  service_role_arn = "{{.ServiceRoleARN}}"
-  default_instance_profile_arn = "{{.InstanceProfileARN}}"
+  service_role_arn = "${aws_iam_role.tf-acc-opsworks-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-ec2-profile.arn}"
   default_availability_zone = "us-west-2a"
   default_os = "Amazon Linux 2014.09"
   default_root_device_type = "ebs"
@@ -289,10 +202,9 @@ resource "aws_opsworks_stack" "tf-acc" {
     url = "https://github.com/awslabs/opsworks-example-cookbooks.git"
   }
 }
-`))
+`
 
-var testAccAWSOpsWorksStack_VPCConfig = template.Must(
-	template.New("aws_opsworks_stack_vpc_config").Parse(`
+var testAccAWSOpsWorksStack_VPCConfig = `
 resource "aws_vpc" "tf-acc" {
   cidr_block = "10.3.5.0/24"
 }
@@ -303,24 +215,53 @@ resource "aws_subnet" "tf-acc" {
   availability_zone = "us-west-2a"
 }
 
+resource "aws_iam_role" "tf-acc-opsworks-vpc-ec2-role" {
+  name = "tf-acc-opsworks-vpc-ec2-role"
+  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
+}
+
+resource "aws_iam_instance_profile" "tf-acc-opsworks-vpc-ec2-profile" {
+  name = "tf-acc-opsworks-vpc-ec2-profile"
+  roles = ["${aws_iam_role.tf-acc-opsworks-vpc-ec2-role.name}"]
+}
+
+resource "aws_iam_role" "tf-acc-opsworks-vpc-service-role" {
+  name = "tf-acc-opsworks-vpc-service-role"
+  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
+}
+
 resource "aws_opsworks_stack" "tf-acc" {
   name = "tf-opsworks-acc"
   vpc_id = "${aws_vpc.tf-acc.id}"
   default_subnet_id = "${aws_subnet.tf-acc.id}"
-  service_role_arn = "{{.ServiceRoleARN}}"
-  default_instance_profile_arn = "{{.InstanceProfileARN}}"
+  service_role_arn = "${aws_iam_role.tf-acc-opsworks-vpc-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-vpc-ec2-profile.arn}"
   default_os = "Amazon Linux 2014.09"
   default_root_device_type = "ebs"
   custom_json = "{\"key\": \"value\"}"
   chef_version = "11.10"
   use_opsworks_security_groups = true
 }
-`))
+`
 
-var testAccAWSOpsWorksStack_VPCConfigUpdate = template.Must(
-	template.New("aws_opsworks_stack_vpc_config_update").Parse(`
+var testAccAWSOpsWorksStack_VPCConfigUpdate = `
 resource "aws_vpc" "tf-acc" {
   cidr_block = "10.3.5.0/24"
+}
+
+resource "aws_iam_role" "tf-acc-opsworks-vpc-ec2-role" {
+  name = "tf-acc-opsworks-vpc-ec2-role"
+  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
+}
+
+resource "aws_iam_instance_profile" "tf-acc-opsworks-vpc-ec2-profile" {
+  name = "tf-acc-opsworks-vpc-ec2-profile"
+  roles = ["${aws_iam_role.tf-acc-opsworks-vpc-ec2-role.name}"]
+}
+
+resource "aws_iam_role" "tf-acc-opsworks-vpc-service-role" {
+  name = "tf-acc-opsworks-vpc-service-role"
+  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
 }
 
 resource "aws_subnet" "tf-acc" {
@@ -333,8 +274,8 @@ resource "aws_opsworks_stack" "tf-acc" {
   name = "tf-opsworks-acc"
   vpc_id = "${aws_vpc.tf-acc.id}"
   default_subnet_id = "${aws_subnet.tf-acc.id}"
-  service_role_arn = "{{.ServiceRoleARN}}"
-  default_instance_profile_arn = "{{.InstanceProfileARN}}"
+  service_role_arn = "${aws_iam_role.tf-acc-opsworks-vpc-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-vpc-ec2-profile.arn}"
   default_os = "Amazon Linux 2014.09"
   default_root_device_type = "ebs"
   custom_json = "{\"key\": \"value\"}"
@@ -348,4 +289,4 @@ resource "aws_opsworks_stack" "tf-acc" {
     url = "https://github.com/awslabs/opsworks-example-cookbooks.git"
   }
 }
-`))
+`
