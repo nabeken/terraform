@@ -103,7 +103,7 @@ var testAccAWSOpsWorksStackCheckResourceAttrs = resource.ComposeTestCheckFunc(
 	resource.TestCheckResourceAttr(
 		"aws_opsworks_stack.tf-acc", "chef_version", "11.10"),
 	resource.TestCheckResourceAttr(
-		"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "true"),
+		"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "false"),
 )
 
 var testAccAWSOpsWorksStackCheckResourceAttrsUpdate = resource.ComposeTestCheckFunc(
@@ -120,7 +120,7 @@ var testAccAWSOpsWorksStackCheckResourceAttrsUpdate = resource.ComposeTestCheckF
 	resource.TestCheckResourceAttr(
 		"aws_opsworks_stack.tf-acc", "chef_version", "11.10"),
 	resource.TestCheckResourceAttr(
-		"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "true"),
+		"aws_opsworks_stack.tf-acc", "use_opsworks_security_groups", "false"),
 	resource.TestCheckResourceAttr(
 		"aws_opsworks_stack.tf-acc", "use_custom_cookbooks", "true"),
 	resource.TestCheckResourceAttr(
@@ -133,32 +133,34 @@ var testAccAWSOpsWorksStackCheckResourceAttrsUpdate = resource.ComposeTestCheckF
 		"aws_opsworks_stack.tf-acc", "cookbook_source.3517999628.url", "https://github.com/awslabs/opsworks-example-cookbooks.git"),
 )
 
-var testAccAWSOpsWorksStack_NoVPCConfig = `
-resource "aws_iam_role" "tf-acc-opsworks-ec2-role" {
-  name = "tf-acc-opsworks-ec2-role"
+var testAccAWSOpsWorksIAM = `
+resource "aws_iam_role" "opsworks-ec2-role" {
+  name = "tf-acc-20150512-aws-opsworks-ec2-role"
   assume_role_policy = "{\"Version\":\"2008-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
 }
 
-resource "aws_iam_instance_profile" "tf-acc-opsworks-ec2-profile" {
-  name = "tf-acc-opsworks-ec2-profile"
-  roles = ["${aws_iam_role.tf-acc-opsworks-ec2-role.name}"]
+resource "aws_iam_instance_profile" "opsworks-ec2-profile" {
+  name = "tf-acc-20150512-aws-opsworks-ec2-profile"
+  roles = ["${aws_iam_role.opsworks-ec2-role.name}"]
 }
 
-resource "aws_iam_role" "tf-acc-opsworks-service-role" {
-  name = "tf-acc-opsworks-service-role"
+resource "aws_iam_role" "opsworks-service-role" {
+  name = "tf-acc-20150512-aws-opsworks-service-role"
   assume_role_policy = "{\"Version\":\"2008-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
 }
 
-resource "aws_iam_role_policy" "tf-acc-opsworks-service-policy" {
-  name = "tf-acc-opsworks-service-policy"
-  role = "${aws_iam_role.tf-acc-opsworks-service-role.name}"
+resource "aws_iam_role_policy" "opsworks-service-policy" {
+  name = "tf-acc-20150512-aws-opsworks-service-policy"
+  role = "${aws_iam_role.opsworks-service-role.name}"
   policy = "{\"Statement\": [{\"Action\": [\"ec2:*\", \"iam:PassRole\",\"cloudwatch:GetMetricStatistics\",\"elasticloadbalancing:*\",\"rds:*\"],\"Effect\": \"Allow\",\"Resource\": [\"*\"] }]}"
 }
+`
 
+var testAccAWSOpsWorksStack_NoVPCConfig = testAccAWSOpsWorksIAM + `
 resource "aws_opsworks_stack" "tf-acc" {
   name = "tf-opsworks-acc"
-  service_role_arn = "${aws_iam_role.tf-acc-opsworks-service-role.arn}"
-  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-ec2-profile.arn}"
+  service_role_arn = "${aws_iam_role.opsworks-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.opsworks-ec2-profile.arn}"
   default_availability_zone = "us-west-2a"
   default_os = "Amazon Linux 2014.09"
   default_root_device_type = "ebs"
@@ -168,26 +170,11 @@ resource "aws_opsworks_stack" "tf-acc" {
 }
 `
 
-var testAccAWSOpsWorksStack_NoVPCConfigUpdate = `
-resource "aws_iam_role" "tf-acc-opsworks-ec2-role" {
-  name = "tf-acc-opsworks-ec2-role"
-  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
-}
-
-resource "aws_iam_instance_profile" "tf-acc-opsworks-ec2-profile" {
-  name = "tf-acc-opsworks-ec2-profile"
-  roles = ["${aws_iam_role.tf-acc-opsworks-ec2-role.name}"]
-}
-
-resource "aws_iam_role" "tf-acc-opsworks-service-role" {
-  name = "tf-acc-opsworks-service-role"
-  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
-}
-
+var testAccAWSOpsWorksStack_NoVPCConfigUpdate = testAccAWSOpsWorksIAM + `
 resource "aws_opsworks_stack" "tf-acc" {
   name = "tf-opsworks-acc"
-  service_role_arn = "${aws_iam_role.tf-acc-opsworks-service-role.arn}"
-  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-ec2-profile.arn}"
+  service_role_arn = "${aws_iam_role.opsworks-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.opsworks-ec2-profile.arn}"
   default_availability_zone = "us-west-2a"
   default_os = "Amazon Linux 2014.09"
   default_root_device_type = "ebs"
@@ -204,7 +191,7 @@ resource "aws_opsworks_stack" "tf-acc" {
 }
 `
 
-var testAccAWSOpsWorksStack_VPCConfig = `
+var testAccAWSOpsWorksStack_VPCConfig = testAccAWSOpsWorksIAM + `
 resource "aws_vpc" "tf-acc" {
   cidr_block = "10.3.5.0/24"
 }
@@ -215,53 +202,23 @@ resource "aws_subnet" "tf-acc" {
   availability_zone = "us-west-2a"
 }
 
-resource "aws_iam_role" "tf-acc-opsworks-vpc-ec2-role" {
-  name = "tf-acc-opsworks-vpc-ec2-role"
-  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
-}
-
-resource "aws_iam_instance_profile" "tf-acc-opsworks-vpc-ec2-profile" {
-  name = "tf-acc-opsworks-vpc-ec2-profile"
-  roles = ["${aws_iam_role.tf-acc-opsworks-vpc-ec2-role.name}"]
-}
-
-resource "aws_iam_role" "tf-acc-opsworks-vpc-service-role" {
-  name = "tf-acc-opsworks-vpc-service-role"
-  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
-}
-
 resource "aws_opsworks_stack" "tf-acc" {
   name = "tf-opsworks-acc"
   vpc_id = "${aws_vpc.tf-acc.id}"
   default_subnet_id = "${aws_subnet.tf-acc.id}"
-  service_role_arn = "${aws_iam_role.tf-acc-opsworks-vpc-service-role.arn}"
-  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-vpc-ec2-profile.arn}"
+  service_role_arn = "${aws_iam_role.opsworks-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.opsworks-ec2-profile.arn}"
   default_os = "Amazon Linux 2014.09"
   default_root_device_type = "ebs"
   custom_json = "{\"key\": \"value\"}"
   chef_version = "11.10"
-  use_opsworks_security_groups = true
+  use_opsworks_security_groups = false
 }
 `
 
-var testAccAWSOpsWorksStack_VPCConfigUpdate = `
+var testAccAWSOpsWorksStack_VPCConfigUpdate = testAccAWSOpsWorksIAM + `
 resource "aws_vpc" "tf-acc" {
   cidr_block = "10.3.5.0/24"
-}
-
-resource "aws_iam_role" "tf-acc-opsworks-vpc-ec2-role" {
-  name = "tf-acc-opsworks-vpc-ec2-role"
-  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
-}
-
-resource "aws_iam_instance_profile" "tf-acc-opsworks-vpc-ec2-profile" {
-  name = "tf-acc-opsworks-vpc-ec2-profile"
-  roles = ["${aws_iam_role.tf-acc-opsworks-vpc-ec2-role.name}"]
-}
-
-resource "aws_iam_role" "tf-acc-opsworks-vpc-service-role" {
-  name = "tf-acc-opsworks-vpc-service-role"
-  assume_role_policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"opsworks.amazonaws.com\"},\"Effect\":\"Allow\",\"Sid\":\"\"}]}"
 }
 
 resource "aws_subnet" "tf-acc" {
@@ -274,13 +231,13 @@ resource "aws_opsworks_stack" "tf-acc" {
   name = "tf-opsworks-acc"
   vpc_id = "${aws_vpc.tf-acc.id}"
   default_subnet_id = "${aws_subnet.tf-acc.id}"
-  service_role_arn = "${aws_iam_role.tf-acc-opsworks-vpc-service-role.arn}"
-  default_instance_profile_arn = "${aws_iam_instance_profile.tf-acc-opsworks-vpc-ec2-profile.arn}"
+  service_role_arn = "${aws_iam_role.opsworks-service-role.arn}"
+  default_instance_profile_arn = "${aws_iam_instance_profile.opsworks-ec2-profile.arn}"
   default_os = "Amazon Linux 2014.09"
   default_root_device_type = "ebs"
   custom_json = "{\"key\": \"value\"}"
   chef_version = "11.10"
-  use_opsworks_security_groups = true
+  use_opsworks_security_groups = false
   use_custom_cookbooks = true
   manage_berkshelf = true
   cookbook_source {

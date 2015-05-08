@@ -4,18 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/awslabs/aws-sdk-go/aws"
 	"github.com/awslabs/aws-sdk-go/service/opsworks"
 	"github.com/hashicorp/terraform/helper/hashcode"
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
 // TODO(nabeken):
 //   - SSH Key in opsworks.Source (waiting for vault integration)
 //     But AWS will mask the value like `"SshKey": "*****FILTERED*****"`
-//   - IAM/ARN: Need more user-friendly UX
 func resourceAwsOpsWorksStack() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceAwsOpsWorksStackCreate,
@@ -151,10 +152,29 @@ func resourceAwsOpsWorksStackCreate(d *schema.ResourceData, meta interface{}) er
 		createOpts.DefaultSubnetID = aws.String(d.Get("default_subnet_id").(string))
 		inVPC = true
 	}
-	resp, err := opsworksconn.CreateStack(createOpts)
+
+	// Retry if we get ValidationException looks like the below:
+	// Service Role Arn: arn:aws:iam::1234567890:role/tf-acc-aws-opsworks-vpc-service-role is not yet propagated, please try again in a couple of minutes
+	var resp *opsworks.CreateStackOutput
+	err := resource.Retry(20*time.Minute, func() error {
+		var cerr error
+		resp, cerr = opsworksconn.CreateStack(createOpts)
+		if cerr != nil {
+			if opserr, ok := cerr.(aws.APIError); ok {
+				// I know this is a ugly error checking but AWS does not provide a code for this case.
+				if opserr.Code == "ValidationException" && strings.Contains(opserr.Message, "is not yet propagated") {
+					log.Printf("[INFO] Waiting for Service Role to be propagated: %s", cerr)
+					return cerr
+				}
+			}
+			return resource.RetryError{Err: cerr}
+		}
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("Error creating stack: %s", err)
 	}
+
 	d.SetId(*resp.StackID)
 
 	// Wait for several seconds until all built-in security groups are created
@@ -162,7 +182,7 @@ func resourceAwsOpsWorksStackCreate(d *schema.ResourceData, meta interface{}) er
 	// specify what built-in security groups are.
 	if inVPC {
 		log.Print("[INFO] Waiting for built-in security groups created")
-		time.Sleep(15 * time.Second)
+		time.Sleep(30 * time.Second)
 	}
 	return resourceAwsOpsWorksStackUpdate(d, meta)
 }
@@ -319,7 +339,7 @@ func resourceAwsOpsWorksStackDelete(d *schema.ResourceData, meta interface{}) er
 	// FIXME: If multiple stacks are in the same VPC, it does not make sense but I have no idea.
 	if _, found := d.GetOk("vpc_id"); found {
 		log.Print("[INFO] Waiting for built-in security groups removed")
-		time.Sleep(15 * time.Second)
+		time.Sleep(30 * time.Second)
 	}
 	return nil
 }
